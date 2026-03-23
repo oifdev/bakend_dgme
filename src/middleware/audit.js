@@ -1,5 +1,37 @@
 const { supabaseAdmin } = require('../config/supabase');
 
+/** Campos sensibles que nunca deben aparecer en los logs de auditoría */
+const SENSITIVE_FIELDS = [
+    'password',
+    'password_confirmation',
+    'current_password',
+    'new_password',
+    'token',
+    'access_token',
+    'refresh_token',
+    'secret',
+    'api_key',
+    'private_key',
+    'supabase_key',
+    'authorization',
+];
+
+/**
+ * Sanitiza un objeto eliminando campos sensibles para que no queden
+ * en texto plano dentro de los logs de auditoría.
+ */
+function sanitizeBody(body) {
+    if (!body || typeof body !== 'object') return body;
+
+    const sanitized = { ...body };
+    for (const field of SENSITIVE_FIELDS) {
+        if (field in sanitized) {
+            sanitized[field] = '[REDACTED]';
+        }
+    }
+    return sanitized;
+}
+
 /**
  * Audit middleware — automatically logs CUD (Create, Update, Delete)
  * operations to the audit_logs table.
@@ -22,7 +54,7 @@ const audit = (entityType, action) => {
                         entity_type: entityType,
                         entity_id: data?.data?.id || data?.id || null,
                         old_data: req.auditOldData || null,
-                        new_data: req.body || null,
+                        new_data: sanitizeBody(req.body) || null,
                         ip_address:
                             req.ip || req.headers['x-forwarded-for'] || req.socket?.remoteAddress,
                     });

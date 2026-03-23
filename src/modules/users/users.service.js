@@ -18,30 +18,47 @@ class UsersService {
             throw { statusCode: 400, message: authError.message };
         }
 
-        // 2. Create employee profile
-        const profile = await usersRepository.create({
-            user_id: authData.user.id,
-            first_name: userData.first_name,
-            last_name: userData.last_name,
-            identity_number: userData.identity_number,
-            birth_date: userData.birth_date || null,
-            address: userData.address || null,
-            phone: userData.phone || null,
-            institutional_email: userData.institutional_email || userData.email,
-            contract_type: userData.contract_type || null,
-            start_date: userData.start_date || null,
-            subdirection_id: userData.subdirection_id || null,
-            unit_id: userData.unit_id || null,
-            position_id: userData.position_id || null,
-        });
-
-        // 3. Assign roles if provided
-        if (userData.role_ids && userData.role_ids.length > 0) {
-            const roleAssignments = userData.role_ids.map((role_id) => ({
+        let profile;
+        try {
+            // 2. Create employee profile
+            profile = await usersRepository.create({
                 user_id: authData.user.id,
-                role_id,
-            }));
-            await supabaseAdmin.from('user_roles').insert(roleAssignments);
+                first_name: userData.first_name,
+                last_name: userData.last_name,
+                identity_number: userData.identity_number,
+                birth_date: userData.birth_date || null,
+                address: userData.address || null,
+                phone: userData.phone || null,
+                institutional_email: userData.institutional_email || userData.email,
+                contract_type: userData.contract_type || null,
+                start_date: userData.start_date || null,
+                subdirection_id: userData.subdirection_id || null,
+                unit_id: userData.unit_id || null,
+                position_id: userData.position_id || null,
+            });
+
+            // 3. Assign roles if provided
+            if (userData.role_ids && userData.role_ids.length > 0) {
+                const roleAssignments = userData.role_ids.map((role_id) => ({
+                    user_id: authData.user.id,
+                    role_id,
+                }));
+                await supabaseAdmin.from('user_roles').insert(roleAssignments);
+            }
+        } catch (profileError) {
+            // Rollback: eliminar el usuario de Supabase Auth para evitar usuarios huérfanos
+            try {
+                await supabaseAdmin.auth.admin.deleteUser(authData.user.id);
+            } catch (rollbackError) {
+                console.error(
+                    `[UsersService] Rollback fallido para auth user ${authData.user.id}:`,
+                    rollbackError
+                );
+            }
+            throw {
+                statusCode: 500,
+                message: 'Error al crear el perfil del usuario. La operación fue revertida.',
+            };
         }
 
         return profile;
@@ -118,9 +135,9 @@ class UsersService {
         // Soft delete profile
         await usersRepository.softDelete(id);
 
-        // Disable auth user
+        // Deshabilitar el usuario en Supabase Auth (ban efectivo ~100 años)
         await supabaseAdmin.auth.admin.updateUserById(existing.user_id, {
-            ban_duration: 'none',
+            ban_duration: '876000h',
             user_metadata: { disabled: true },
         });
 
